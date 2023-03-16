@@ -2,6 +2,7 @@ package validationcustommessage
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -10,8 +11,7 @@ import (
 type (
 	VCM interface {
 		ErrorValidationVariabel(field interface{}, rules string) error
-		ErrorValidationStruct(data interface{}) (*[]ErrorRespon, bool)
-		ErrorMessageOnly(err error) *[]ErrorRespon
+		ErrorValidationStruct(data interface{}) ([]errorRespon, error)
 	}
 
 	/*
@@ -24,7 +24,7 @@ type (
 		["gte"] = "/f greater than equeal /p"
 	*/
 	ValidationRules map[string]string
-	ErrorRespon     struct {
+	errorRespon     struct {
 		Field   string `json:"field"`
 		Message string `json:"message"`
 	}
@@ -52,30 +52,36 @@ func (v *vcm) ErrorValidationVariabel(field interface{}, rules string) error {
 	return nil
 }
 
-func (v *vcm) ErrorValidationStruct(data interface{}) (*[]ErrorRespon, bool) {
-	errs := v.ErrorMessageOnly(v.validate.Struct(data))
+func (v *vcm) ErrorValidationStruct(data interface{}) ([]errorRespon, error) {
+	ref := reflect.ValueOf(data)
 
-	if len(*errs) > 0 {
-		return errs, false
+	if ref.Kind() == reflect.Struct {
+		errs := v.ErrorMessageOnly(v.validate.Struct(data))
+
+		if len(errs) != 0 {
+			findByReflect(&errs, data)
+			return errs, errors.New("error field")
+		}
+		return nil, nil
 	}
-	return errs, true
+	return nil, errors.New("data not a struct")
 }
 
-func (v *vcm) ErrorMessageOnly(err error) *[]ErrorRespon {
+func (v *vcm) ErrorMessageOnly(err error) []errorRespon {
 	var ve validator.ValidationErrors
 
 	if errors.As(err, &ve) {
-		var out []ErrorRespon
+		var out []errorRespon
 		for _, fe := range ve {
-			*&out = append(*&out, ErrorRespon{
+			*&out = append(*&out, errorRespon{
 				Field:   fe.Field(),
 				Message: v.messageGetError(fe.Tag(), fe.Param()),
 			})
 		}
-		return &out
+		return out
 	}
 
-	return nil
+	return []errorRespon{}
 }
 
 func (v *vcm) messageGetError(tag string, params ...string) string {
@@ -96,4 +102,20 @@ func (v *vcm) messageGetError(tag string, params ...string) string {
 	}
 
 	return err
+}
+
+func findByReflect(data *[]errorRespon, struc interface{}) {
+	ref := reflect.ValueOf(struc)
+	tempData := *data
+
+	for j, val := range tempData {
+		for i := 0; i < ref.NumField(); i++ {
+			if ref.Type().Field(i).Name == val.Field && ref.Type().Field(i).Tag.Get("json") != "" {
+				tempData[j] = errorRespon{
+					Field:   ref.Type().Field(i).Tag.Get("json"),
+					Message: tempData[j].Message,
+				}
+			}
+		}
+	}
 }
