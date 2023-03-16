@@ -1,4 +1,4 @@
-module github.com/AgikAp/validation-custom-message/v1.0.0
+module github.com/AgikAp/validation-custom-message
 
 go 1.19
 
